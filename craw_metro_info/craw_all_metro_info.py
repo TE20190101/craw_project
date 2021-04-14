@@ -76,7 +76,7 @@ def get_metro_info(id, cityname, name):
             df_per_zd['路线名称'] = data_line['ln']
             df_per_zd['城市名称'] = name
 
-            df_per_zd.rename(columns={'n': '站点名称', 'sp': '拼音名称'}, inplace=True)
+            df_per_zd.rename(columns={'n': '站点名称', 'sp': '拼音名称', 'poiid': 'POI编号'}, inplace=True)
             df_data_city = df_data_city.append(df_per_zd, ignore_index=True)
 
     return df_data_city
