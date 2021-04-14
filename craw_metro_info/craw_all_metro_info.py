@@ -70,8 +70,8 @@ def get_metro_info(id, cityname, name):
         for data_line in data['l']:
             df_per_zd = pd.DataFrame(data_line['st'])
             df_per_zd = df_per_zd[['n', 'sl', 'poiid', 'sp']]
-            df_per_zd['gd_经度'] = df_per_zd['sl'].apply(lambda x: x.split(',')[0])
-            df_per_zd['gd_纬度'] = df_per_zd['sl'].apply(lambda x: x.split(',')[1])
+            df_per_zd['gd经度'] = df_per_zd['sl'].apply(lambda x: x.split(',')[0])
+            df_per_zd['gd纬度'] = df_per_zd['sl'].apply(lambda x: x.split(',')[1])
             df_per_zd.drop('sl', axis=1, inplace=True)
             df_per_zd['路线名称'] = data_line['ln']
             df_per_zd['城市名称'] = name
