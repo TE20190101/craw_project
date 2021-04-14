@@ -32,7 +32,7 @@ def get_city_list():
     获取拥有地铁的所有城市
     @return:
     """
-    url = 'http://map.amap.com/subway/index.html?&1100'
+    url = 'http://map.amap.com/subway/index.html'
     res = requests.get(url, headers={'User-Agent': get_ua()})
     res.encoding = res.apparent_encoding
     soup = BeautifulSoup(res.text, 'html.parser')
