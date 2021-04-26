@@ -1,8 +1,10 @@
 # encoding:utf-8
 # FileName: craw_lianjia_house
-# Author:   wzg
-# email:    1010490079@qq.com
 # Date:     2019/12/25 18:52
+# Author:   xiaoyi | 小一
+# wechat:   zhiqiuxiaoyi
+# 公众号：   小一的学习笔记
+# email:    zhiqiuxiaoyi@qq.com
 # Description: 爬取链接网的租房信息
 import os
 import random
@@ -16,6 +18,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from craw_lianjia.init_db import connection_to_mysql
+from craw_tools.get_ua import get_ua
 
 
 class LianJiaHouse:
@@ -64,7 +67,7 @@ class LianJiaHouse:
         self.pymysql_engine, self.pymysql_session = None, None
         # 设置爬虫头部，建议多设置一些，防止被封
         self.headers = {
-            'User-Agent': self.get_ua(),
+            'User-Agent': get_ua(),
         }
 
     def get_main_page(self):
@@ -195,8 +198,9 @@ class LianJiaHouse:
         # 遍历获取每一个 div 的房屋详情链接和房屋地址
         for soup_div in soup_div_list:
             # 定位并获取每一个房屋的详情链接
-            detail_info = soup_div.find_all('p', class_='content__list--item--title twoline')[0].a.get('href')
-            detail_href = 'https://sz.lianjia.com/' + detail_info
+            # detail_info = soup_div.find_all('p', class_='content__list--item--title twoline')[0].a.get('href')
+            detail_info = soup_div.find_all('p', class_='content__list--item--title')[0].a.get('href')
+            detail_href = 'https://sz.lianjia.com' + detail_info
 
             # 获取详细链接的编号作为房屋唯一id
             house_id = detail_info.split('/')[2].replace('.html', '')
@@ -243,75 +247,141 @@ class LianJiaHouse:
         # 生成一个有序字典，保存房屋结果
         house_info = OrderedDict()
         for i in range(0, self.retry):
-            try:
-                # 随机休眠3-8 秒
-                time.sleep(random.randint(self.await_min_time, self.await_max_time))
+            # 随机休眠3-8 秒
+            time.sleep(random.randint(self.await_min_time, self.await_max_time))
+            '''爬取页面，获得详细数据'''
+            response = requests.get(url=href, headers=self.headers, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
 
-                '''爬取页面，获得详细数据'''
-                response = requests.get(url=href, headers=self.headers, timeout=10)
-                soup = BeautifulSoup(response.text, 'html.parser')
+            '''获取上一个页面传递的房屋数据'''
+            house_info['house_address'] = info_list[0]
+            house_info['house_rental_area'] = info_list[1]
+            house_info['house_orientation'] = info_list[2]
+            house_info['house_layout'] = info_list[3]
+            house_info['house_floor'] = info_list[4]
+            house_info['house_rental_price'] = price_text
 
-                '''获取上一个页面传递的房屋数据'''
-                house_info['house_address'] = info_list[0]
-                house_info['house_rental_area'] = info_list[1]
-                house_info['house_orientation'] = info_list[2]
-                house_info['house_layout'] = info_list[3]
-                house_info['house_floor'] = info_list[4]
-                house_info['house_rental_price'] = price_text
+            '''解析房源维护时间'''
+            soup_div_text = soup.find_all('div', class_='content__subtitle')[0].get_text()
+            house_info['house_id'] = house_id  # 房源编号数据直接从上个页面获取
+            # house_info['house_id'] = re.findall(r'[A-Z]*\d{5,}', soup_div_text)[0]
+            house_info['house_update_time'] = re.findall(r'\d{4}-\d{2}-\d{2}', soup_div_text)[0]
 
-                '''解析房源维护时间'''
-                soup_div_text = soup.find_all('div', class_='content__subtitle')[0].get_text()
-                house_info['house_id'] = house_id   # 房源编号数据直接从上个页面获取
-                # house_info['house_id'] = re.findall(r'[A-Z]*\d{5,}', soup_div_text)[0]
-                house_info['house_update_time'] = re.findall(r'\d{4}-\d{2}-\d{2}', soup_div_text)[0]
+            '''解析经纬度数据'''
+            # 获取到经纬度的 script定义数据
+            location_str = response.text[re.search(r'(g_conf.coord)+', response.text).span()[0]:
+                                         re.search(r'(g_conf.subway)+', response.text).span()[0]]
+            # 字符串清洗，并在键上添加引号，方便转化成字典
+            location_str = location_str.replace('\n', '').replace(' ', '').replace("longitude", "'longitude'"). \
+                replace("latitude", "'latitude'")
+            # 获取完整经纬度数据，转换成字典，并保存
+            location_dict = eval(location_str[location_str.index('{'): location_str.index('}') + 1])
+            house_info['house_longitude'] = location_dict['longitude']
+            house_info['house_latitude'] = location_dict['latitude']
 
-                '''解析经纬度数据'''
-                # 获取到经纬度的 script定义数据
-                location_str = response.text[re.search(r'(g_conf.coord)+', response.text).span()[0]:
-                                             re.search(r'(g_conf.subway)+', response.text).span()[0]]
-                # 字符串清洗，并在键上添加引号，方便转化成字典
-                location_str = location_str.replace('\n', '').replace(' ', '').replace("longitude", "'longitude'").\
-                    replace("latitude", "'latitude'")
-                # 获取完整经纬度数据，转换成字典，并保存
-                location_dict = eval(location_str[location_str.index('{'): location_str.index('}')+1])
-                house_info['house_longitude'] = location_dict['longitude']
-                house_info['house_latitude'] = location_dict['latitude']
+            '''解析房屋出租方式（整租/合租/不限）'''
+            house_info['house_rental_method'] = soup.find_all('ul', class_='content__aside__list')[0].find_all('li')[0]. \
+                get_text().replace('租赁方式：', '')
 
-                '''解析房屋出租方式（整租/合租/不限）'''
-                house_info['house_rental_method'] = soup.find_all('ul', class_='content__aside__list')[0].find_all('li')[0].\
-                    get_text().replace('租赁方式：', '')
+            '''解析房屋的标签'''
+            house_info['house_tag'] = soup.find_all('p', class_='content__aside--tags')[0]. \
+                get_text().replace('\n', '/').replace(' ', '')
 
-                '''解析房屋的标签'''
-                house_info['house_tag'] = soup.find_all('p', class_='content__aside--tags')[0].\
-                    get_text().replace('\n', '/').replace(' ', '')
+            '''房屋其他基本信息'''
+            # 定位到当前div并获取所有基本信息的 li 标签
+            soup_li = soup.find_all('div', class_='content__article__info', attrs={'id': 'info'})[0]. \
+                find_all('ul')[0].find_all('li', class_='fl oneline')
+            # 赋值房屋信息
+            house_info['house_elevator'] = soup_li[8].get_text().replace('电梯：', '')
+            house_info['house_parking'] = soup_li[10].get_text().replace('车位：', '')
+            house_info['house_water'] = soup_li[11].get_text().replace('用水：', '')
+            house_info['house_electricity'] = soup_li[13].get_text().replace('用电：', '')
+            house_info['house_gas'] = soup_li[14].get_text().replace('燃气：', '')
+            house_info['house_heating'] = soup_li[16].get_text().replace('采暖：', '')
+            house_info['create_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            house_info['city'] = self.city
 
-                '''房屋其他基本信息'''
-                # 定位到当前div并获取所有基本信息的 li 标签
-                soup_li = soup.find_all('div', class_='content__article__info', attrs={'id': 'info'})[0]. \
-                    find_all('ul')[0].find_all('li', class_='fl oneline')
-                # 赋值房屋信息
-                house_info['house_elevator'] = soup_li[8].get_text().replace('电梯：', '')
-                house_info['house_parking'] = soup_li[10].get_text().replace('车位：', '')
-                house_info['house_water'] = soup_li[11].get_text().replace('用水：', '')
-                house_info['house_electricity'] = soup_li[13].get_text().replace('用电：', '')
-                house_info['house_gas'] = soup_li[14].get_text().replace('燃气：', '')
-                house_info['house_heating'] = soup_li[16].get_text().replace('采暖：', '')
-                house_info['create_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                house_info['city'] = self.city
+            print(house_info['house_address'])
+            # 保存当前影片信息
+            self.data_info.append(house_info)
+            self.count += 1
 
-                print(house_info['house_address'])
-                # 保存当前影片信息
-                self.data_info.append(house_info)
-                self.count += 1
+            '''超过50条数据，保存到本地'''
+            if len(self.data_info) >= 50:
+                self.data_to_csv()
+            # 处理无异常在，跳出循环，否则，进行重试
+            break
 
-                '''超过10条数据，保存到本地'''
-                if len(self.data_info) >= 50:
-                    self.data_to_csv()
-                # 处理无异常在，跳出循环，否则，进行重试
-                break
-            except Exception as e:
-                print(e)
-                print('爬取数据异常，重新尝试爬取数据。爬取地址：{0}'.format(href))
+
+            # try:
+            #     # 随机休眠3-8 秒
+            #     time.sleep(random.randint(self.await_min_time, self.await_max_time))
+            #
+            #     '''爬取页面，获得详细数据'''
+            #     response = requests.get(url=href, headers=self.headers, timeout=10)
+            #     soup = BeautifulSoup(response.text, 'html.parser')
+            #
+            #     '''获取上一个页面传递的房屋数据'''
+            #     house_info['house_address'] = info_list[0]
+            #     house_info['house_rental_area'] = info_list[1]
+            #     house_info['house_orientation'] = info_list[2]
+            #     house_info['house_layout'] = info_list[3]
+            #     house_info['house_floor'] = info_list[4]
+            #     house_info['house_rental_price'] = price_text
+            #
+            #     '''解析房源维护时间'''
+            #     soup_div_text = soup.find_all('div', class_='content__subtitle')[0].get_text()
+            #     house_info['house_id'] = house_id   # 房源编号数据直接从上个页面获取
+            #     # house_info['house_id'] = re.findall(r'[A-Z]*\d{5,}', soup_div_text)[0]
+            #     house_info['house_update_time'] = re.findall(r'\d{4}-\d{2}-\d{2}', soup_div_text)[0]
+            #
+            #     '''解析经纬度数据'''
+            #     # 获取到经纬度的 script定义数据
+            #     location_str = response.text[re.search(r'(g_conf.coord)+', response.text).span()[0]:
+            #                                  re.search(r'(g_conf.subway)+', response.text).span()[0]]
+            #     # 字符串清洗，并在键上添加引号，方便转化成字典
+            #     location_str = location_str.replace('\n', '').replace(' ', '').replace("longitude", "'longitude'").\
+            #         replace("latitude", "'latitude'")
+            #     # 获取完整经纬度数据，转换成字典，并保存
+            #     location_dict = eval(location_str[location_str.index('{'): location_str.index('}')+1])
+            #     house_info['house_longitude'] = location_dict['longitude']
+            #     house_info['house_latitude'] = location_dict['latitude']
+            #
+            #     '''解析房屋出租方式（整租/合租/不限）'''
+            #     house_info['house_rental_method'] = soup.find_all('ul', class_='content__aside__list')[0].find_all('li')[0].\
+            #         get_text().replace('租赁方式：', '')
+            #
+            #     '''解析房屋的标签'''
+            #     house_info['house_tag'] = soup.find_all('p', class_='content__aside--tags')[0].\
+            #         get_text().replace('\n', '/').replace(' ', '')
+            #
+            #     '''房屋其他基本信息'''
+            #     # 定位到当前div并获取所有基本信息的 li 标签
+            #     soup_li = soup.find_all('div', class_='content__article__info', attrs={'id': 'info'})[0]. \
+            #         find_all('ul')[0].find_all('li', class_='fl oneline')
+            #     # 赋值房屋信息
+            #     house_info['house_elevator'] = soup_li[8].get_text().replace('电梯：', '')
+            #     house_info['house_parking'] = soup_li[10].get_text().replace('车位：', '')
+            #     house_info['house_water'] = soup_li[11].get_text().replace('用水：', '')
+            #     house_info['house_electricity'] = soup_li[13].get_text().replace('用电：', '')
+            #     house_info['house_gas'] = soup_li[14].get_text().replace('燃气：', '')
+            #     house_info['house_heating'] = soup_li[16].get_text().replace('采暖：', '')
+            #     house_info['create_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            #     house_info['city'] = self.city
+            #
+            #     print(house_info['house_address'])
+            #     # 保存当前影片信息
+            #     self.data_info.append(house_info)
+            #     self.count += 1
+            #
+            #     '''超过10条数据，保存到本地'''
+            #     if len(self.data_info) >= 50:
+            #         self.data_to_csv()
+            #     # 处理无异常在，跳出循环，否则，进行重试
+            #     break
+            # except Exception as e:
+            #     print(e)
+            #     print('爬取数据异常，重新尝试爬取数据。爬取地址：{0}'.format(href))
 
     def check_exist(self, house_id):
         """
@@ -401,65 +471,10 @@ class LianJiaHouse:
 
         return area_list
 
-    def get_ua(self):
-        """
-        在UA库中随机选择一个UA
-        :return: 返回一个库中的随机UA
-        """
-        ua_list = [
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36 OPR/26.0.1656.60",
-            "Opera/8.0 (Windows NT 5.1; U; en)",
-            "Mozilla/5.0 (Windows NT 5.1; U; en; rv:1.8.1) Gecko/20061208 Firefox/2.0.0 Opera 9.50",
-            "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; en) Opera 9.50",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:34.0) Gecko/20100101 Firefox/34.0",
-            "Mozilla/5.0 (X11; U; Linux x86_64; zh-CN; rv:1.9.2.10) Gecko/20100922 Ubuntu/10.10 (maverick) Firefox/3.6.10",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/534.57.2 (KHTML, like Gecko) Version/5.1.7 Safari/534.57.2",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.71 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko) Chrome/23.0.1271.64 Safari/537.11",
-            "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit/534.16 (KHTML, like Gecko) Chrome/10.0.648.133 Safari/534.16",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.101 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.11 (KHTML, like Gecko) Chrome/20.0.1132.11 TaoBrowser/2.0 Safari/536.11",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/21.0.1180.71 Safari/537.1 LBBROWSER",
-            "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; .NET4.0C; .NET4.0E; LBBROWSER)",
-            "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; QQDownload 732; .NET4.0C; .NET4.0E; LBBROWSER)",
-            "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; WOW64; Trident/5.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; Media Center PC 6.0; .NET4.0C; .NET4.0E; QQBrowser/7.0.3698.400)",
-            "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; QQDownload 732; .NET4.0C; .NET4.0E)",
-            "Mozilla/5.0 (Windows NT 5.1) AppleWebKit/535.11 (KHTML, like Gecko) Chrome/17.0.963.84 Safari/535.11 SE 2.X MetaSr 1.0",
-            "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; Trident/4.0; SV1; QQDownload 732; .NET4.0C; .NET4.0E; SE 2.X MetaSr 1.0)",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Maxthon/4.4.3.4000 Chrome/30.0.1599.101 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.122 UBrowser/4.0.3214.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
-            "Mozilla/5.0 (Windows; U; Windows NT 5.2) AppleWebKit/525.13 (KHTML, like Gecko) Chrome/0.2.149.27 Safari/525.13",
-            "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50",
-            "Mozilla/5.0 (Macintosh; U; IntelMac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1Safari/534.50",
-            "Mozilla/5.0 (Windows NT 10.0; WOW64; rv:51.0) Gecko/20100101 Firefox/51.0",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/22.0.1207.1 Safari/537.1",
-            "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0",
-            "Mozilla/5.0 (Windows; U; Windows NT 6.1; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.6 (KHTML, like Gecko) Chrome/20.0.1092.0 Safari/536.6",
-            "Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.6 (KHTML, like Gecko) Chrome/20.0.1090.0 Safari/536.6",
-            "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.1 (KHTML, like Gecko) Chrome/19.77.34.5 Safari/537.1",
-            "Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_8; en-us) AppleWebKit/534.50 (KHTML, like Gecko) Version/5.1 Safari/534.50",
-            "Mozilla/5.0 (Windows NT 6.0) AppleWebKit/536.5 (KHTML, like Gecko) Chrome/19.0.1084.36 Safari/536.5",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1063.0 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 5.1) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1063.0 Safari/536.3",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_0) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1063.0 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1062.0 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1062.0 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.1 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.1 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.1 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.3 (KHTML, like Gecko) Chrome/19.0.1061.0 Safari/536.3",
-            "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/535.24 (KHTML, like Gecko) Chrome/19.0.1055.1 Safari/535.24"]
-
-        return random.choice(ua_list)
-
 
 if __name__ == '__main__':
-    city_number = 'sz'
-    city_name = '深圳'
+    city_number = 'wh'
+    city_name = '武汉'
     url = 'https://{0}.lianjia.com/zufang/'.format(city_number)
     page_size = 30
     save_file_path = r'C:\Users\wzg\Desktop\data_house.csv'
