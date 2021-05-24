@@ -65,9 +65,9 @@ if __name__ == '__main__':
             gps_lng, gps_lat = bd09_to_gcj02(bd_lng, bd_lat)
             df_data.loc[df_data['name']==query, 'gps经度'] = gps_lng
             df_data.loc[df_data['name']==query, 'gps纬度'] = gps_lat
-            # excel 三维地图中GPS经纬度需要修正
-            df_data.loc[df_data['name']==query, 'gps修正后经度'] = gps_lng+0.00506219000000385
-            df_data.loc[df_data['name']==query, 'gps修正后纬度'] = gps_lat-0.00273865999999856
+            # # excel 三维地图中GPS经纬度需要修正
+            # df_data.loc[df_data['name']==query, 'gps修正后经度'] = gps_lng+0.00506219000000385
+            # df_data.loc[df_data['name']==query, 'gps修正后纬度'] = gps_lat-0.00273865999999856
         except:
             print("{0} 爬取失败，请注意！".format(query))
             print(url)
