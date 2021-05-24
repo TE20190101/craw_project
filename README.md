@@ -3,14 +3,6 @@
 ### 文章同步:
 > 知乎，csdb，简书
 
-<br>
-
-**如果你觉得我写的不错的话，欢迎star**<br>
-**也可以关注公众号，获取更详细爬虫教程（手把手教你！）**
-
-<br>
-
-![文章首发：公众号『知秋小一』](https://raw.githubusercontent.com/double-point/GraphBed/master/machine_learning/HMM/qrcode_for_gh_8ed0220ce0fe_258.jpg)
 
 
 <br><br>
@@ -66,3 +58,12 @@
 <br>
 
 
+
+<br>
+
+**如果你觉得我写的不错的话，欢迎star**<br>
+**也可以关注公众号，获取更详细爬虫教程（手把手教你！）**
+
+<br>
+
+![文章首发：公众号『知秋小一』](https://raw.githubusercontent.com/double-point/GraphBed/master/machine_learning/HMM/qrcode_for_gh_8ed0220ce0fe_258.jpg)
